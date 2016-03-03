@@ -52,14 +52,10 @@ pub fn num_tiles(fmt: &OutputTileFormat) -> usize {
 pub struct TileSet {
     pub tile_size: [usize; 2],
     pub image_path: String,
-    pub sets: HashMap<String, TileSetItem>,
+    pub fmts: HashMap<String, TileSetItems>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TileSetItem {
-    pub fmt: String,
-    pub tiles: Vec<[usize; 2]>,
-}
+pub type TileSetItems = HashMap<String, Vec<[usize; 2]>>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -143,7 +139,7 @@ pub fn compile_tile_set(src_folder: &Path,
                         target: &Path,
                         tile_set_target_path: &Path) -> TileSetResult<()> {
     let tss: TileSetSource = try!(load(src_folder.join(tile_set_source_path)));
-    let mut sets = HashMap::<String, TileSetItem>::new();
+    let mut fmts = HashMap::<String, TileSetItems>::new();
     let mut total_tiles = 0;
 
     for group in &tss.groups {
@@ -175,21 +171,18 @@ pub fn compile_tile_set(src_folder: &Path,
         let mut src_img = try!(image::open(src_folder.join(&from.image_path)));
 
         for item in &group.items {
-            if sets.contains_key(&item.id) {
-                return Err(Error::Msg("duplicate item"));
-            }
-
             let (x, y) = (item.loc[0], item.loc[1]);
             let mut out_pxs = Vec::<[usize; 2]>::new();
             for tile in ifmt.parts.values().flat_map(|c| c.iter()) {
                 let px = try!(cursor.add_tile(&mut src_img, [x + tile[0], y + tile[1]]));
                 out_pxs.push(px);
             }
-            let new_item = TileSetItem {
-                fmt: ifmt.fmt.clone(),
-                tiles: out_pxs,
+
+            let mut m = fmts.entry(ifmt.fmt.clone()).or_insert(HashMap::new());
+            match m.insert(item.id.clone(), out_pxs) {
+                Some(_) => return Err(Error::Msg("duplicate item")),
+                _ => { }
             };
-            sets.insert(item.id.clone(), new_item);
         }
     }
 
@@ -209,7 +202,7 @@ pub fn compile_tile_set(src_folder: &Path,
     let ts = TileSet {
         tile_size: tss.tile_size,
         image_path: String::from(img_path.to_str().unwrap()),
-        sets: sets,
+        fmts: fmts,
     };
 
     {
