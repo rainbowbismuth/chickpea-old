@@ -1,0 +1,10 @@
+[package]
+name = "chickpea_tiles"
+version = "0.1.0"
+authors = ["Emily A. Bellows <emily.a.bellows@gmail.com>"]
+
+[dependencies]
+image = "*"
+serde = "*"
+serde_macros = "*"
+serde_json = "0.7.0"

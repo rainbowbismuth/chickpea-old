@@ -1,0 +1,45 @@
+{
+  "identifier": "default_tile_set",
+  "tile_size": [16, 16],
+  "out_tile_set_path": "test_data/out.json",
+  "out_image_path": "test_data/out.png",
+  "tile_sources": [{
+    "identifier": "dawnlike_floor",
+    "image_path": "../assets/raw/DawnLike/Objects/Floor.png"
+  }, {
+    "identifier": "dawnlike_wall",
+    "image_path": "../assets/raw/DawnLike/Objects/Wall.png"
+  }],
+  "floor_sources": [{
+    "tile_source": "dawnlike_floor",
+    "floor_sets": [{
+      "identifier": "debug_floor",
+      "location": [0, 0]
+    }, {
+      "identifier": "morning_brick",
+      "location": [0, 3]
+    }, {
+      "identifier": "morning_grass",
+      "location": [7, 3]
+    }, {
+      "identifier": "morning_stone",
+      "location": [14, 3]
+    }]
+  }],
+  "wall_sources": [{
+    "tile_source": "dawnlike_wall",
+    "wall_sets": [{
+      "identifier": "debug_wall",
+      "location": [0, 0]
+    }, {
+      "identifier": "morning_brick_wall",
+      "location": [0, 3]
+    }, {
+      "identifier": "morning_wood_wall",
+      "location": [7, 3]
+    }, {
+      "identifier": "morning_stone_wall",
+      "location": [14, 3]
+    }]
+  }]
+}

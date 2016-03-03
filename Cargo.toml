@@ -1,0 +1,14 @@
+[package]
+name = "chickpea"
+version = "0.1.0"
+authors = ["Emily A. Bellows <emily.a.bellows@gmail.com>"]
+
+[dependencies]
+image = "*"
+time = "0.1.34"
+chickpea_tiles = { path = "chickpea_tiles" }
+
+[dependencies.glium]
+version = "0.13"
+features = ["glutin"]
+default-features = false
