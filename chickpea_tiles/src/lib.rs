@@ -7,102 +7,58 @@ extern crate serde_json;
 
 use std::fs::File;
 use std::collections::HashMap;
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use image::{DynamicImage, GenericImage, ImageFormat};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TileSource {
-    pub identifier: String,
     pub image_path: String,
+    pub tile_size: [usize; 2],
 }
 
-pub const TILES_IN_FLOOR_SET: u32 = 16;
+pub type OutputTileFormat = BTreeMap<String, usize>;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct FloorSource {
-    pub tile_source: String,
-    pub floor_sets: Vec<FloorSetSource>,
-}
-
-impl FloorSource {
-    pub fn num_tiles(&self) -> u32 {
-        self.floor_sets.len() as u32 * TILES_IN_FLOOR_SET
-    }
+pub struct InputTileFormat {
+    pub fmt: String,
+    pub parts: BTreeMap<String, Vec<[usize; 2]>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct FloorSetSource {
-    pub identifier: String,
-    pub location: (u32, u32),
-}
-
-pub const TILES_IN_WALL_SET: u32 = 13;
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct WallSource {
-    pub tile_source: String,
-    pub wall_sets: Vec<WallSetSource>,
-}
-
-impl WallSource {
-    pub fn num_tiles(&self) -> u32 {
-        self.wall_sets.len() as u32 * TILES_IN_WALL_SET
-    }
+pub struct TileSetSource {
+    pub tile_size: [usize; 2],
+    pub groups: Vec<TileSetSourceGroup>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct WallSetSource {
-    pub identifier: String,
-    pub location: (u32, u32),
+pub struct TileSetSourceGroup {
+    pub from: String,
+    pub fmt: String,
+    pub items: Vec<TileSetSourceItem>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct TileSetModule {
-    pub identifier: String,
-    pub tile_size: (u32, u32),
-    pub out_tile_set_path: String,
-    pub out_image_path: String,
-    pub tile_sources: Vec<TileSource>,
-    pub floor_sources: Vec<FloorSource>,
-    pub wall_sources: Vec<WallSource>,
+pub struct TileSetSourceItem {
+    pub id: String,
+    pub loc: [usize; 2],
 }
 
-impl TileSetModule {
-    pub fn num_tiles(&self) -> u32 {
-        let mut sum = 0;
-        for floor_source in &self.floor_sources {
-            sum += floor_source.num_tiles();
-        }
-        for wall_source in &self.wall_sources {
-            sum += wall_source.num_tiles();
-        }
-        sum
-    }
+pub fn num_tiles(fmt: &OutputTileFormat) -> usize {
+    fmt.values().fold(0, |x, y| x + y)
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct CompiledTileSet {
-    pub identifier: String,
-    pub tile_size: (u32, u32),
+pub struct TileSet {
+    pub tile_size: [usize; 2],
     pub image_path: String,
-    pub floor_sets: HashMap<String, CompiledFloorSet>,
-    pub wall_sets: HashMap<String, CompiledWallSet>,
+    pub sets: HashMap<String, TileSetItem>,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct CompiledFloorSet {
-    pub numpad: [(u32, u32); 9],
-    pub top_bottom: [(u32, u32); 3],
-    pub left_right: [(u32, u32); 3],
-    pub closed_center: (u32, u32),
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct CompiledWallSet {
-    pub circle: [(u32, u32); 6],
-    pub center_point: (u32, u32),
-    pub wall: (u32, u32),
-    pub cross: [(u32, u32); 5],
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TileSetItem {
+    pub fmt: String,
+    pub tiles: Vec<[usize; 2]>,
 }
 
 #[derive(Debug)]
@@ -135,41 +91,39 @@ pub type TileSetResult<T> = Result<T, Error>;
 
 struct TileSetCursor {
     img: DynamicImage,
-    loc: (u32, u32),
-    tile_size: (u32, u32),
+    loc: [usize; 2],
+    tile_size: [usize; 2],
 }
 
 impl TileSetCursor {
-    fn new(dimensions: (u32, u32), tile_size: (u32, u32)) -> TileSetCursor {
+    fn new(dimensions: [usize; 2], tile_size: [usize; 2]) -> TileSetCursor {
         TileSetCursor {
-            img: DynamicImage::new_rgba8(dimensions.0, dimensions.1),
-            loc: (0, 0),
+            img: DynamicImage::new_rgba8(dimensions[0] as u32, dimensions[1] as u32),
+            loc: [0, 0],
             tile_size: tile_size,
         }
     }
 
     fn add_tile(&mut self,
                 from: &mut DynamicImage,
-                tile_coordinates: (u32, u32))
-                -> TileSetResult<(u32, u32)> {
-        let (width, _) = self.img.dimensions();
-        let x = tile_coordinates.0 * self.tile_size.0;
-        let y = tile_coordinates.1 * self.tile_size.1;
-        let sub = from.sub_image(x, y, self.tile_size.0, self.tile_size.1);
+                tile_coordinates: [usize; 2])
+                -> TileSetResult<[usize; 2]> {
+        let width = self.img.dimensions().0 as usize;
+        let x = tile_coordinates[0] * self.tile_size[0];
+        let y = tile_coordinates[1] * self.tile_size[1];
+        let sub = from.sub_image(x as u32, y as u32, self.tile_size[0] as u32, self.tile_size[1] as u32);
 
-        let ok = self.img.copy_from(&sub, self.loc.0, self.loc.1);
+        let ok = self.img.copy_from(&sub, self.loc[0] as u32, self.loc[1] as u32);
 
-        self.loc.0 += self.tile_size.0;
-        if self.loc.0 + self.tile_size.0 > width {
-            self.loc.0 = 0;
-            self.loc.1 += self.tile_size.1;
+        self.loc[0] += self.tile_size[0];
+        if self.loc[0] + self.tile_size[0] > width {
+            self.loc[0] = 0;
+            self.loc[1] += self.tile_size[1];
         }
 
         match ok {
-            true => Ok((self.loc.0, self.loc.1)),
+            true => Ok([self.loc[0], self.loc[1]]),
             false => {
-                println!("{:?}", width);
-                println!("{:?}", self.loc);
                 Err(Error::Msg("couldn't fit tile into image"))
             }
         }
@@ -177,145 +131,110 @@ impl TileSetCursor {
     }
 }
 
-pub fn compile_tile_set_module(module_src: &str) -> TileSetResult<()> {
-    let module: TileSetModule = {
-        let mut reader = try!(File::open(module_src));
-        try!(serde_json::de::from_reader(&mut reader))
+fn load<T: serde::Deserialize>(mut path: PathBuf) -> TileSetResult<T> {
+    path.set_extension("json");
+    let reader = try!(File::open(path));
+    let t: T = try!(serde_json::de::from_reader(reader));
+    Ok(t)
+}
+
+pub fn compile_tile_set(src_folder: &Path,
+                        tile_set_source_path: &Path,
+                        target: &Path,
+                        tile_set_target_path: &Path) -> TileSetResult<()> {
+    let tss: TileSetSource = try!(load(src_folder.join(tile_set_source_path)));
+    let mut sets = HashMap::<String, TileSetItem>::new();
+    let mut total_tiles = 0;
+
+    for group in &tss.groups {
+        let from: TileSource = try!(load(src_folder.join(&group.from)));
+        let ifmt: InputTileFormat = try!(load(src_folder.join(&group.fmt)));
+        let ofmt: OutputTileFormat = try!(load(src_folder.join(&ifmt.fmt)));
+
+        if tss.tile_size != from.tile_size {
+            return Err(Error::Msg("inconsistent tile size"));
+        }
+
+        for (part, num) in &ofmt {
+            if ifmt.parts[part].len() != *num {
+                return Err(Error::Msg("input & output format don't match"));
+            }
+        }
+
+        total_tiles += num_tiles(&ofmt) * group.items.len();
+    }
+
+    let root = (total_tiles as f64).sqrt().floor() as usize + 1;
+    let dimensions = [root * tss.tile_size[0], root * tss.tile_size[1]];
+    let mut cursor = TileSetCursor::new(dimensions, tss.tile_size);
+
+    for group in &tss.groups {
+        let from: TileSource = try!(load(src_folder.join(&group.from)));
+        let ifmt: InputTileFormat = try!(load(src_folder.join(&group.fmt)));
+
+        let mut src_img = try!(image::open(src_folder.join(&from.image_path)));
+
+        for item in &group.items {
+            if sets.contains_key(&item.id) {
+                return Err(Error::Msg("duplicate item"));
+            }
+
+            let (x, y) = (item.loc[0], item.loc[1]);
+            let mut out_pxs = Vec::<[usize; 2]>::new();
+            for tile in ifmt.parts.values().flat_map(|c| c.iter()) {
+                let px = try!(cursor.add_tile(&mut src_img, [x + tile[0], y + tile[1]]));
+                out_pxs.push(px);
+            }
+            let new_item = TileSetItem {
+                fmt: ifmt.fmt.clone(),
+                tiles: out_pxs,
+            };
+            sets.insert(item.id.clone(), new_item);
+        }
+    }
+
+    //TODO: FIXXXXXX
+    let img_path = {
+        let mut p = target.join(tile_set_target_path);
+        p.set_extension("png");
+        p
     };
 
-    let mut images = try!(load_tile_sources(&module.tile_sources));
-
-    let total_tiles = module.num_tiles();
-
-    let tile_set_image_size = {
-        let root = (total_tiles as f64).sqrt().floor() as u32 + 1;
-        assert!(root * root > total_tiles);
-        (root * module.tile_size.0, root * module.tile_size.1)
+    let ts_path = {
+        let mut p = target.join(tile_set_target_path);
+        p.set_extension("json");
+        p
     };
 
-    let mut tile_set_cursor = TileSetCursor::new(tile_set_image_size, module.tile_size);
-
-    let floor_sets = try!(compile_floor_sets(&module.floor_sources,
-                                             &mut images,
-                                             &mut tile_set_cursor));
-    let wall_sets = try!(compile_wall_sets(&module.wall_sources,
-                                           &mut images,
-                                           &mut tile_set_cursor));
-
-    let compiled_tile_set = CompiledTileSet {
-        identifier: module.identifier.clone(),
-        tile_size: module.tile_size,
-        image_path: module.out_image_path.clone(),
-        floor_sets: floor_sets,
-        wall_sets: wall_sets,
+    let ts = TileSet {
+        tile_size: tss.tile_size,
+        image_path: String::from(img_path.to_str().unwrap()),
+        sets: sets,
     };
 
     {
-        let mut buffer = try!(File::create(&module.out_tile_set_path));
-        try!(serde_json::ser::to_writer(&mut buffer, &compiled_tile_set));
+        let mut writer = try!(File::create(ts_path));
+        try!(serde_json::ser::to_writer(&mut writer, &ts));
     }
 
     {
-        let mut buffer = try!(File::create(&module.out_image_path));
-        try!(tile_set_cursor.img.save(&mut buffer, ImageFormat::PNG));
+        let mut writer = try!(File::create(img_path));
+        try!(cursor.img.save(&mut writer, ImageFormat::PNG));
     }
 
     Ok(())
 }
 
-fn load_tile_sources<'a>(tile_sources: &'a [TileSource])
-                         -> TileSetResult<HashMap<&'a str, DynamicImage>> {
-    let mut hmap = HashMap::new();
-    for tile_source in tile_sources {
-        let image = try!(image::open(Path::new(&tile_source.image_path)));
-        hmap.insert(tile_source.identifier.as_ref(), image);
-    }
-    Ok(hmap)
-}
-
-fn compile_wall_sets(wall_sources: &[WallSource],
-                     images: &mut HashMap<&str, DynamicImage>,
-                     cursor: &mut TileSetCursor)
-                     -> TileSetResult<HashMap<String, CompiledWallSet>> {
-    let mut hmap = HashMap::new();
-    for wall_source in wall_sources {
-        let mut image = try!(images.get_mut(&wall_source.tile_source[..])
-                                   .ok_or(Error::Msg("missing tile_source")));
-        for wall_set in &wall_source.wall_sets {
-            let (x, y) = wall_set.location;
-
-            let c3 = try!(cursor.add_tile(&mut image, (x, y)));
-            let c4 = try!(cursor.add_tile(&mut image, (x + 1, y)));
-            let c5 = try!(cursor.add_tile(&mut image, (x + 2, y)));
-            let w = try!(cursor.add_tile(&mut image, (x + 3, y)));
-            let x1 = try!(cursor.add_tile(&mut image, (x + 4, y)));
-            let c2 = try!(cursor.add_tile(&mut image, (x, y + 1)));
-            let cp = try!(cursor.add_tile(&mut image, (x + 1, y + 1)));
-            let x2 = try!(cursor.add_tile(&mut image, (x + 3, y + 1)));
-            let x3 = try!(cursor.add_tile(&mut image, (x + 4, y + 1)));
-            let x4 = try!(cursor.add_tile(&mut image, (x + 5, y + 1)));
-            let c1 = try!(cursor.add_tile(&mut image, (x, y + 2)));
-            let c6 = try!(cursor.add_tile(&mut image, (x + 2, y + 2)));
-            let x5 = try!(cursor.add_tile(&mut image, (x + 4, y + 2)));
-
-            let compiled_wall_set = CompiledWallSet {
-                circle: [c1, c2, c3, c4, c5, c6],
-                center_point: cp,
-                wall: w,
-                cross: [x1, x2, x3, x4, x5],
-            };
-            hmap.insert(wall_set.identifier.clone(), compiled_wall_set);
-        }
-    }
-    Ok(hmap)
-}
-
-fn compile_floor_sets(floor_sources: &[FloorSource],
-                      images: &mut HashMap<&str, DynamicImage>,
-                      cursor: &mut TileSetCursor)
-                      -> TileSetResult<HashMap<String, CompiledFloorSet>> {
-    let mut hmap = HashMap::new();
-    for floor_source in floor_sources {
-        let mut image = try!(images.get_mut(&floor_source.tile_source[..])
-                                   .ok_or(Error::Msg("missing tile_source")));
-        for floor_set in &floor_source.floor_sets {
-            let (x, y) = floor_set.location;
-
-            let n7 = try!(cursor.add_tile(&mut image, (x, y)));
-            let n8 = try!(cursor.add_tile(&mut image, (x + 1, y)));
-            let n9 = try!(cursor.add_tile(&mut image, (x + 2, y)));
-            let tb_top = try!(cursor.add_tile(&mut image, (x + 3, y)));
-            let closed = try!(cursor.add_tile(&mut image, (x + 5, y)));
-            let n4 = try!(cursor.add_tile(&mut image, (x, y + 1)));
-            let n5 = try!(cursor.add_tile(&mut image, (x + 1, y + 1)));
-            let n6 = try!(cursor.add_tile(&mut image, (x + 2, y + 1)));
-            let tb_mid = try!(cursor.add_tile(&mut image, (x + 3, y + 1)));
-            let lr_left = try!(cursor.add_tile(&mut image, (x + 4, y + 1)));
-            let lr_mid = try!(cursor.add_tile(&mut image, (x + 5, y + 1)));
-            let lr_right = try!(cursor.add_tile(&mut image, (x + 6, y + 1)));
-            let n1 = try!(cursor.add_tile(&mut image, (x, y + 2)));
-            let n2 = try!(cursor.add_tile(&mut image, (x + 1, y + 2)));
-            let n3 = try!(cursor.add_tile(&mut image, (x + 2, y + 2)));
-            let tb_bot = try!(cursor.add_tile(&mut image, (x + 3, y + 2)));
-
-            let compiled_floor_set = CompiledFloorSet {
-                numpad: [n1, n2, n3, n4, n5, n6, n7, n8, n9],
-                top_bottom: [tb_top, tb_mid, tb_bot],
-                left_right: [lr_left, lr_mid, lr_right],
-                closed_center: closed,
-            };
-            hmap.insert(floor_set.identifier.clone(), compiled_floor_set);
-        }
-    }
-    Ok(hmap)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn it_works() {
-        compile_tile_set_module("test_data/tile_set.json").expect("compilation failed");
+        compile_tile_set(&Path::new("test_data/src"),
+                         &Path::new("tile_set_sources/morning"),
+                         &Path::new("test_data/target"),
+                         &Path::new("tile_sets/morning")).expect("compilation failed");
     }
 }

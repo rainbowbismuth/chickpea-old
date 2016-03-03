@@ -1,0 +1,37 @@
+{
+  "tile_size": [16, 16],
+  "groups":
+[{
+  "from": "tile_sources/dawnlike_floor",
+  "fmt": "input_tile_formats/dawnlike_floor",
+  "items": [{
+    "id": "debug_floor",
+    "loc": [0, 0]
+  }, {
+    "id": "morning_brick",
+    "loc": [0, 3]
+  }, {
+    "id": "morning_grass",
+    "loc": [7, 3]
+  }, {
+    "id": "morning_stone",
+    "loc": [14, 3]
+  }]
+}, {
+  "from": "tile_sources/dawnlike_wall",
+  "fmt": "input_tile_formats/dawnlike_wall",
+  "items": [{
+    "id": "debug_wall",
+    "loc": [0, 0]
+  }, {
+    "id": "morning_brick_wall",
+    "loc": [0, 3]
+  }, {
+    "id": "morning_wood_wall",
+    "loc": [7, 3]
+  }, {
+    "id": "morning_stone_wall",
+    "loc": [14, 3]
+  }]
+}]
+}
