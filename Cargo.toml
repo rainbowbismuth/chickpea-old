@@ -2,6 +2,7 @@
 name = "chickpea"
 version = "0.1.0"
 authors = ["Emily A. Bellows <emily.a.bellows@gmail.com>"]
+license = "GPL-3.0"
 
 [dependencies]
 image = "*"
